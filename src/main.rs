@@ -1,3 +1,6 @@
+use master_duel_translayer::{attach_process};
+
 fn main() {
-    println!("Hello, world!");
+    let p = attach_process().unwrap();
+    println!("pid: {}", p.pid);
 }
