@@ -1,11 +1,11 @@
 [package]
+edition = "2021"
 name = "master_duel_translayer"
 version = "0.1.0"
-edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0"
 sysinfo = "0.23.0"
-winapi = "0.3.9"
+winapi = {version = "0.3.9", features = ["dwmapi"]}

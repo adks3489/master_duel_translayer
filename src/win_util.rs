@@ -1,10 +1,26 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use std::{ffi::c_void, mem::size_of};
 use winapi::{
-    shared::minwindef::{DWORD, LPARAM},
-    shared::windef::HWND,
-    um::processthreadsapi::OpenProcess,
-    um::winnt::HANDLE,
-    um::winuser::{EnumChildWindows, EnumWindows, GetWindowThreadProcessId, SetLastErrorEx},
+    ctypes::c_int,
+    shared::{
+        minwindef::{DWORD, FALSE, LPARAM, LPVOID, WORD},
+        ntdef::NULL,
+        windef::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, HGDIOBJ, HWND, LPRECT, RECT},
+    },
+    um::{
+        dwmapi::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS},
+        processthreadsapi::OpenProcess,
+        wingdi::{
+            BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits,
+            SelectObject, BITMAPFILEHEADER, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+            HGDI_ERROR, RGBQUAD, SRCCOPY,
+        },
+        winnt::{HANDLE, LONG},
+        winuser::{
+            EnumChildWindows, EnumWindows, GetDC, GetForegroundWindow, GetWindowThreadProcessId,
+            SetLastErrorEx, SetProcessDpiAwarenessContext,
+        },
+    },
 };
 
 unsafe extern "system" fn callback_enum_windows_until<T: FnMut(HWND) -> i32>(
@@ -76,5 +92,120 @@ pub fn open_process(desired_address: DWORD, pid: u32) -> Result<HANDLE> {
         Err(anyhow::anyhow!("Open process fail"))
     } else {
         Ok(handle)
+    }
+}
+
+pub fn capture_screen(hwnd: HWND) -> Result<Option<(BITMAPFILEHEADER, BITMAPINFO, Vec<u8>)>> {
+    unsafe {
+        let active_hwnd = GetForegroundWindow();
+        if active_hwnd != hwnd {
+            return Ok(None);
+        }
+        SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        let mut client_rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut client_rect as LPRECT as LPVOID,
+            size_of::<RECT>() as DWORD,
+        );
+        dbg!(
+            client_rect.top,
+            client_rect.bottom,
+            client_rect.left,
+            client_rect.right
+        );
+        let hdc = GetDC(NULL as HWND);
+        if hdc.is_null() {
+            return Err(anyhow!("GetDC failed"));
+        }
+        let hdc_mem = CreateCompatibleDC(hdc);
+        if hdc_mem.is_null() {
+            return Err(anyhow!("CreateCompatibleDC failed"));
+        }
+        let width = client_rect.right - client_rect.left;
+        let height = client_rect.bottom - client_rect.top;
+        dbg!(width, height);
+        let bmp_target = CreateCompatibleBitmap(hdc, width, height);
+        if bmp_target.is_null() {
+            return Err(anyhow!("CreateCompatibleBitmap failed"));
+        }
+        let res = SelectObject(hdc_mem, bmp_target as HGDIOBJ);
+        if res.is_null() || res == HGDI_ERROR {
+            return Err(anyhow!("SelectObject failed"));
+        }
+        if BitBlt(
+            hdc_mem,
+            0,
+            0,
+            width,
+            height,
+            hdc,
+            client_rect.left,
+            client_rect.top,
+            SRCCOPY,
+        ) == FALSE
+        {
+            return Err(anyhow!("BitBlt failed"));
+        }
+
+        const PIXEL_WIDTH: usize = 4;
+        const BITMAPINFOHEADER_SIZE: u32 = 40;
+        const BITMAPFILEHEADER_SIZE: u32 = 14;
+        let mut bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: BITMAPINFOHEADER_SIZE,
+                biWidth: width as LONG,
+                biHeight: height as LONG,
+                biPlanes: 1,
+                biBitCount: 8 * PIXEL_WIDTH as WORD,
+                biCompression: BI_RGB,
+                biSizeImage: (width * height * PIXEL_WIDTH as c_int) as DWORD,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [RGBQUAD {
+                rgbBlue: 0,
+                rgbGreen: 0,
+                rgbRed: 0,
+                rgbReserved: 0,
+            }],
+        };
+        let size: usize = (width * height) as usize * PIXEL_WIDTH;
+        let mut data: Vec<u8> = Vec::with_capacity(size);
+        data.set_len(size);
+
+        GetDIBits(
+            hdc,
+            bmp_target,
+            0,
+            height as DWORD,
+            &mut data[0] as *mut u8 as *mut c_void,
+            &mut bmi as *mut BITMAPINFO,
+            DIB_RGB_COLORS,
+        );
+        let bmp_size = ((width * bmi.bmiHeader.biBitCount as i32 + 31) / 32) * 4 * height;
+        let bmf_header = BITMAPFILEHEADER {
+            bfType: 0x4D42,
+            bfSize: bmp_size as u32 + BITMAPFILEHEADER_SIZE + BITMAPINFOHEADER_SIZE,
+            bfReserved1: 0,
+            bfReserved2: 0,
+            bfOffBits: BITMAPFILEHEADER_SIZE + BITMAPINFOHEADER_SIZE,
+        };
+
+        DeleteDC(hdc);
+        DeleteObject(bmp_target as HGDIOBJ);
+
+        DeleteDC(hdc);
+        DeleteDC(hdc_mem);
+
+        Ok(Some((bmf_header, bmi, data)))
     }
 }
