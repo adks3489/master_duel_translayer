@@ -1,6 +1,14 @@
 use anyhow::{anyhow, Context, Result};
+use leptonica_sys::Pix;
+use scopeguard::defer;
 use std::io::Write;
+use std::{ffi::CStr, ptr, str};
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
+use tesseract_sys::{
+    TessBaseAPICreate, TessBaseAPIDelete, TessBaseAPIGetUTF8Text, TessBaseAPIInit3,
+    TessBaseAPIRecognize, TessBaseAPISetImage2, TessBaseAPISetPageSegMode, TessBaseAPISetVariable,
+    TessPageSegMode_PSM_RAW_LINE,
+};
 use winapi::{
     shared::windef::HWND,
     um::{
@@ -42,6 +50,36 @@ pub fn capture(process: &Process) -> Result<()> {
     Ok(())
 }
 
+fn ocr(image: *mut Pix) -> String {
+    unsafe {
+        let cube = TessBaseAPICreate();
+        defer! {
+            TessBaseAPIDelete(cube);
+        }
+        TessBaseAPIInit3(
+            cube,
+            ptr::null(),
+            CStr::from_bytes_with_nul_unchecked(b"eng\0").as_ptr(),
+        );
+        TessBaseAPISetVariable(
+            cube,
+            CStr::from_bytes_with_nul_unchecked(b"tessedit_char_whitelist\0").as_ptr(),
+            CStr::from_bytes_with_nul_unchecked(
+                b" !#\"$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\0",
+            )
+            .as_ptr(),
+        );
+        TessBaseAPISetPageSegMode(cube, TessPageSegMode_PSM_RAW_LINE);
+        TessBaseAPISetImage2(cube, image);
+        TessBaseAPIRecognize(cube, ptr::null_mut());
+
+        str::from_utf8(CStr::from_ptr(TessBaseAPIGetUTF8Text(cube)).to_bytes())
+            .unwrap()
+            .trim()
+            .to_string()
+    }
+}
+
 fn write_bmp(
     path: &str,
     bmf_header: &BITMAPFILEHEADER,
@@ -67,4 +105,26 @@ fn write_bmp(
     file.write(&bmi.bmiHeader.biClrImportant.to_le_bytes())?;
     file.write(&data)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod test {
+    use crate::ocr;
+    use leptonica_sys::{pixFreeData, pixRead};
+    use std::ffi::CStr;
+
+    fn ocr_from_file(path: &[u8]) -> String {
+        unsafe {
+            let image = pixRead(CStr::from_bytes_with_nul_unchecked(path).as_ptr());
+            let s = ocr(image);
+            pixFreeData(image);
+            s
+        }
+    }
+
+    #[test]
+    fn ocr_test() {
+        assert_eq!("DUEL", ocr_from_file(b"tests/duel.bmp\0"));
+        assert_eq!("Drytron Alpha Thuban", ocr_from_file(b"tests/deck.bmp\0"));
+    }
 }
