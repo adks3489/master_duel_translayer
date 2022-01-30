@@ -5,6 +5,7 @@ pub struct Region {
     pub bottom: i32,
 }
 
+<<<<<<< HEAD
 type Resolution = (i32, i32);
 const BASE_RESOLUTION: Resolution = (2048, 1152);
 pub const MAIN_MENU_DUEL: Region = Region {
@@ -18,6 +19,14 @@ pub const CARD_NAME_DECK_EDIT: Region = Region {
     right: 424,
     top: 168,
     bottom: 201,
+=======
+const BASE_RESOLUTION: (i32, i32) = (1920, 1080);
+const MAIN_MENU: Region = Region {
+    left: 130,
+    right: 358,
+    top: 218,
+    bottom: 518,
+>>>>>>> d887a974c5ece7fea1b0b0e12a973446158e7cd3
 };
 
 impl Region {
@@ -27,6 +36,7 @@ impl Region {
     pub fn height(&self) -> i32 {
         self.bottom - self.top
     }
+<<<<<<< HEAD
     pub fn calc_by_resolution(&self, resolution: Resolution) -> Self {
         let x_base = resolution.1 / BASE_RESOLUTION.0;
         let y_base = resolution.1 / BASE_RESOLUTION.1;
@@ -37,4 +47,6 @@ impl Region {
             bottom: self.bottom * y_base,
         }
     }
+=======
+>>>>>>> d887a974c5ece7fea1b0b0e12a973446158e7cd3
 }

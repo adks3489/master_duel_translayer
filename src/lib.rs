@@ -56,6 +56,7 @@ pub fn capture(process: &Process) -> Result<Vec<u8>> {
     }
 }
 
+<<<<<<< HEAD
 pub enum Mode {
     DeckEdit,
     PublicDeck,
@@ -74,6 +75,8 @@ pub fn recognize_card(buf: &Vec<u8>, mode: Mode) -> Result<String> {
     dbg!(&s);
     Ok(s)
 }
+=======
+>>>>>>> d887a974c5ece7fea1b0b0e12a973446158e7cd3
 fn ocr(image: *mut Pix, region: Option<Region>) -> String {
     unsafe {
         let cube = TessBaseAPICreate();
