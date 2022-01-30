@@ -17,8 +17,8 @@ use winapi::{
         },
         winnt::{HANDLE, LONG},
         winuser::{
-            EnumChildWindows, EnumWindows, GetDC, GetForegroundWindow, GetWindowThreadProcessId,
-            SetLastErrorEx, SetProcessDpiAwarenessContext,
+            EnumChildWindows, EnumWindows, GetDC, GetWindowThreadProcessId, SetLastErrorEx,
+            SetProcessDpiAwarenessContext,
         },
     },
 };
@@ -97,10 +97,6 @@ pub fn open_process(desired_address: DWORD, pid: u32) -> Result<HANDLE> {
 
 pub fn capture_screen(hwnd: HWND) -> Result<Option<(BITMAPFILEHEADER, BITMAPINFO, Vec<u8>)>> {
     unsafe {
-        let active_hwnd = GetForegroundWindow();
-        if active_hwnd != hwnd {
-            return Ok(None);
-        }
         SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         let mut client_rect = RECT {
             left: 0,

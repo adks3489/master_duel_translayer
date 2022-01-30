@@ -1,8 +1,8 @@
 use crate::region::Region;
 use anyhow::{anyhow, Context, Result};
-use leptonica_sys::Pix;
+use leptonica_sys::{pixReadMemBmp, Pix};
 use scopeguard::defer;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 use std::{ffi::CStr, ptr, str};
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 use tesseract_sys::{
@@ -48,6 +48,11 @@ pub fn capture(process: &Process) -> Result<()> {
     let r = win_util::capture_screen(process.hwnd)?;
     if let Some((bmf_header, bmi, data)) = r {
         write_bmp("test.bmp", &bmf_header, &bmi, &data)?;
+        let mut buf = Vec::with_capacity(54 + data.len());
+        combine_bmp(&mut buf, &bmf_header, &bmi, &data)?;
+        let pix = unsafe { pixReadMemBmp(buf.as_ptr(), buf.len().try_into().unwrap()) };
+        let s = ocr(pix, Some(region::MAIN_MENU_DUEL));
+        dbg!(s);
     }
     Ok(())
 }
@@ -85,31 +90,40 @@ fn ocr(image: *mut Pix, region: Option<Region>) -> String {
     }
 }
 
+fn combine_bmp(
+    buf: &mut impl Write,
+    bmf_header: &BITMAPFILEHEADER,
+    bmi: &BITMAPINFO,
+    data: &Vec<u8>,
+) -> Result<()> {
+    buf.write(&bmf_header.bfType.to_le_bytes())?;
+    buf.write(&bmf_header.bfSize.to_le_bytes())?;
+    buf.write(&bmf_header.bfReserved1.to_le_bytes())?;
+    buf.write(&bmf_header.bfReserved2.to_le_bytes())?;
+    buf.write(&bmf_header.bfOffBits.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biSize.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biWidth.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biHeight.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biPlanes.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biBitCount.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biCompression.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biSizeImage.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biXPelsPerMeter.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biYPelsPerMeter.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biClrUsed.to_le_bytes())?;
+    buf.write(&bmi.bmiHeader.biClrImportant.to_le_bytes())?;
+    buf.write(&data)?;
+    Ok(())
+}
+
 fn write_bmp(
     path: &str,
     bmf_header: &BITMAPFILEHEADER,
     bmi: &BITMAPINFO,
     data: &Vec<u8>,
-) -> Result<(), anyhow::Error> {
-    let mut file = std::fs::File::create(path)?;
-    file.write(&bmf_header.bfType.to_le_bytes())?;
-    file.write(&bmf_header.bfSize.to_le_bytes())?;
-    file.write(&bmf_header.bfReserved1.to_le_bytes())?;
-    file.write(&bmf_header.bfReserved2.to_le_bytes())?;
-    file.write(&bmf_header.bfOffBits.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biSize.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biWidth.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biHeight.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biPlanes.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biBitCount.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biCompression.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biSizeImage.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biXPelsPerMeter.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biYPelsPerMeter.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biClrUsed.to_le_bytes())?;
-    file.write(&bmi.bmiHeader.biClrImportant.to_le_bytes())?;
-    file.write(&data)?;
-    Ok(())
+) -> Result<()> {
+    let file = std::fs::File::create(path)?;
+    combine_bmp(&mut BufWriter::new(file), &bmf_header, &bmi, &data)
 }
 
 #[cfg(test)]

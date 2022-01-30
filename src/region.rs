@@ -5,12 +5,13 @@ pub struct Region {
     pub bottom: i32,
 }
 
-const BASE_RESOLUTION: (i32, i32) = (1920, 1080);
-const MAIN_MENU_DUEL: Region = Region {
-    left: 130,
-    right: 358,
-    top: 210,
-    bottom: 280,
+type Resolution = (i32, i32);
+const BASE_RESOLUTION: Resolution = (2048, 1152);
+pub const MAIN_MENU_DUEL: Region = Region {
+    left: 140,
+    right: 390,
+    top: 225,
+    bottom: 300,
 };
 
 impl Region {
@@ -19,5 +20,15 @@ impl Region {
     }
     pub fn height(&self) -> i32 {
         self.bottom - self.top
+    }
+    pub fn calc_by_resolution(&self, resolution: Resolution) -> Self {
+        let x_base = resolution.1 / BASE_RESOLUTION.0;
+        let y_base = resolution.1 / BASE_RESOLUTION.1;
+        Region {
+            left: self.left * x_base,
+            right: self.right * x_base,
+            top: self.top * y_base,
+            bottom: self.bottom * y_base,
+        }
     }
 }
