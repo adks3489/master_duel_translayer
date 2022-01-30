@@ -1,3 +1,4 @@
+use crate::region::Region;
 use anyhow::{anyhow, Context, Result};
 use leptonica_sys::Pix;
 use scopeguard::defer;
@@ -6,8 +7,8 @@ use std::{ffi::CStr, ptr, str};
 use sysinfo::{PidExt, ProcessExt, System, SystemExt};
 use tesseract_sys::{
     TessBaseAPICreate, TessBaseAPIDelete, TessBaseAPIGetUTF8Text, TessBaseAPIInit3,
-    TessBaseAPIRecognize, TessBaseAPISetImage2, TessBaseAPISetPageSegMode, TessBaseAPISetVariable,
-    TessPageSegMode_PSM_RAW_LINE,
+    TessBaseAPIRecognize, TessBaseAPISetImage2, TessBaseAPISetPageSegMode, TessBaseAPISetRectangle,
+    TessBaseAPISetVariable, TessPageSegMode_PSM_RAW_LINE,
 };
 use winapi::{
     shared::windef::HWND,
@@ -16,6 +17,7 @@ use winapi::{
         winnt::HANDLE,
     },
 };
+mod region;
 mod win_util;
 
 pub struct Process {
@@ -50,7 +52,7 @@ pub fn capture(process: &Process) -> Result<()> {
     Ok(())
 }
 
-fn ocr(image: *mut Pix) -> String {
+fn ocr(image: *mut Pix, region: Option<Region>) -> String {
     unsafe {
         let cube = TessBaseAPICreate();
         defer! {
@@ -71,6 +73,9 @@ fn ocr(image: *mut Pix) -> String {
         );
         TessBaseAPISetPageSegMode(cube, TessPageSegMode_PSM_RAW_LINE);
         TessBaseAPISetImage2(cube, image);
+        if let Some(r) = region {
+            TessBaseAPISetRectangle(cube, r.left, r.top, r.width(), r.height());
+        }
         TessBaseAPIRecognize(cube, ptr::null_mut());
 
         str::from_utf8(CStr::from_ptr(TessBaseAPIGetUTF8Text(cube)).to_bytes())
@@ -109,14 +114,22 @@ fn write_bmp(
 
 #[cfg(test)]
 mod test {
-    use crate::ocr;
+    use crate::{ocr, region::Region};
     use leptonica_sys::{pixFreeData, pixRead};
     use std::ffi::CStr;
 
     fn ocr_from_file(path: &[u8]) -> String {
         unsafe {
             let image = pixRead(CStr::from_bytes_with_nul_unchecked(path).as_ptr());
-            let s = ocr(image);
+            let s = ocr(image, None);
+            pixFreeData(image);
+            s
+        }
+    }
+    fn ocr_from_file_with_region(path: &[u8], region: Region) -> String {
+        unsafe {
+            let image = pixRead(CStr::from_bytes_with_nul_unchecked(path).as_ptr());
+            let s = ocr(image, Some(region));
             pixFreeData(image);
             s
         }
@@ -126,5 +139,17 @@ mod test {
     fn ocr_test() {
         assert_eq!("DUEL", ocr_from_file(b"tests/duel.bmp\0"));
         assert_eq!("Drytron Alpha Thuban", ocr_from_file(b"tests/deck.bmp\0"));
+        assert_eq!(
+            "Drytron Alpha",
+            ocr_from_file_with_region(
+                b"tests/deck.bmp\0",
+                Region {
+                    left: 0,
+                    top: 0,
+                    right: 190,
+                    bottom: 33
+                }
+            )
+        );
     }
 }
