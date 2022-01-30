@@ -44,19 +44,36 @@ pub fn attach_process() -> Result<Process> {
     })
 }
 
-pub fn capture(process: &Process) -> Result<()> {
+pub fn capture(process: &Process) -> Result<Vec<u8>> {
     let r = win_util::capture_screen(process.hwnd)?;
     if let Some((bmf_header, bmi, data)) = r {
         write_bmp("test.bmp", &bmf_header, &bmi, &data)?;
         let mut buf = Vec::with_capacity(54 + data.len());
         combine_bmp(&mut buf, &bmf_header, &bmi, &data)?;
-        let pix = unsafe { pixReadMemBmp(buf.as_ptr(), buf.len().try_into().unwrap()) };
-        let s = ocr(pix, Some(region::MAIN_MENU_DUEL));
-        dbg!(s);
+        Ok(buf)
+    } else {
+        Err(anyhow!("capture fail"))
     }
-    Ok(())
 }
 
+pub enum Mode {
+    DeckEdit,
+    PublicDeck,
+    DuelView,
+    CardDetail,
+}
+pub fn recognize_card(buf: &Vec<u8>, mode: Mode) -> Result<String> {
+    let pix = unsafe { pixReadMemBmp(buf.as_ptr(), buf.len().try_into().unwrap()) };
+    let region = match mode {
+        Mode::DeckEdit => region::CARD_NAME_DECK_EDIT,
+        Mode::PublicDeck => todo!(),
+        Mode::DuelView => todo!(),
+        Mode::CardDetail => todo!(),
+    };
+    let s = ocr(pix, Some(region));
+    dbg!(&s);
+    Ok(s)
+}
 fn ocr(image: *mut Pix, region: Option<Region>) -> String {
     unsafe {
         let cube = TessBaseAPICreate();

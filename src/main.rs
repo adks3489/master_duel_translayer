@@ -1,7 +1,7 @@
-use master_duel_translayer::{attach_process, capture};
+mod app;
 
 fn main() {
-    let p = attach_process().unwrap();
-    println!("pid: {}", p.pid);
-    capture(&p);
+    let app = crate::app::App::default();
+    let native_options = eframe::NativeOptions::default();
+    eframe::run_native(Box::new(app), native_options);
 }

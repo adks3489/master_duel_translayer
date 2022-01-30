@@ -13,6 +13,12 @@ pub const MAIN_MENU_DUEL: Region = Region {
     top: 225,
     bottom: 300,
 };
+pub const CARD_NAME_DECK_EDIT: Region = Region {
+    left: 59,
+    right: 424,
+    top: 168,
+    bottom: 201,
+};
 
 impl Region {
     pub fn width(&self) -> i32 {
